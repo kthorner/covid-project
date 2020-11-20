@@ -1,0 +1,56 @@
+---
+title: "Clustering"
+author: "Konrad Thorner"
+date: "8/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ACTIONet)
+library(SingleCellExperiment)
+library(igraph)
+```
+
+```{r}
+csn_list <- readRDS("/home/konrad/Downloads/Summer/Data/csn_final.rds")
+get_lcc <- function(cp_net) {
+  comps <- igraph::components(cp_net)
+  lcc_num <- match(max(comps$csize),comps$csize)
+  genes <- which(comps$membership == lcc_num)
+  cp_subgraph <- induced_subgraph(cp_net,genes,impl=c("auto"))
+  return(cp_subgraph)
+}
+
+loop <- function(dataset) {
+  csn_lcc <- lapply(dataset, get_lcc)
+  return(csn_lcc)
+}
+
+lcc_list <- lapply(csn_list,loop)
+saveRDS(lcc_list,"/home/konrad/Downloads/Summer/Data/lcc_list_lung.rds")
+```
+
+```{r echo=FALSE}
+clust_filter <- function(cp_net) {
+  cp_clusters <- cluster_louvain(cp_net)
+  targets_in_clusters <- cp_clusters$names[cp_clusters$names %in% targets]
+  cluster_list <- lapply(targets_in_clusters, function(x) membership(cp_clusters)[[x]])
+  cluster_list <- unique(cluster_list)
+  filtered_genes <- cp_clusters$names[cp_clusters$membership %in% cluster_list]
+  cp_subgraph <- induced_subgraph(cp_net,filtered_genes,impl=c("auto"))
+  return(cp_subgraph)
+}
+
+louvain_loop <- function(dataset) {
+  csn_louv <- lapply(dataset, function(x) clust_filter(x))
+  return(csn_louv)
+}
+
+targets <- readRDS("/home/konrad/Downloads/Summer/Data/gordon_targets.rds")
+louvain_list <- lapply(csn_list,louvain_loop)
+saveRDS(louvain_list,"/home/konrad/Downloads/Summer/Data/louvain_list_new.rds")
+```

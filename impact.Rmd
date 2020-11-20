@@ -1,0 +1,68 @@
+---
+title: "Impact Scores"
+author: "Konrad Thorner"
+date: "10/7/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+Methods:
+
+For each target interactome, LCC size and global efficiency are computed. The interactome is subsetted to remove all targets, and the measures are computed again. The percent change is found for each, then averaged together into a single value, and finally normalized to compute the impact score.
+
+```{r setup, include=FALSE,echo=FALSE}
+library(knitr)
+library(tidyverse)
+library(igraph)
+library(brainGraph)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+csn_list <- readRDS("/projectnb/cnsbomic/Ahmed/Covid/Konrad/louvain_list_new.rds")
+targets <- readRDS("/projectnb/cnsbomic/Ahmed/Covid/Konrad/gordon_targets.rds")
+
+csn_subset <- csn_list[c(6,14,15)]
+
+cp_loop <- function(cp_net) {
+  comps <- igraph::components(cp_net)
+  lcc_size <- max(comps$csize)
+  eff <- brainGraph::efficiency(cp_net,type="global")
+  nodes <- V(cp_net)$name
+  filtered_nodes <- nodes[!(nodes %in% targets)]
+  new_cp_net <- induced_subgraph(cp_net,filtered_nodes,impl=c("auto"))
+  comps_2 <- igraph::components(new_cp_net)
+  lcc_size_2 <- max(comps_2$csize)
+  eff_2 <- brainGraph::efficiency(new_cp_net,type="global")
+  avg <- ((eff_2/eff)+(lcc_size_2/lcc_size))/2
+  return(c((1-avg)*100,(lcc_size_2/lcc_size),(eff_2/eff)))
+}
+
+ds_loop <- function(dataset) {
+  score_list <- lapply(dataset, cp_loop)
+  dataset_sum <- as.data.frame(do.call(rbind, score_list))
+  colnames(dataset_sum) <- c("Score","LCC","Eff")
+  dataset_sum <- rownames_to_column(dataset_sum, var = "Cell") %>% as_tibble()
+  return(dataset_sum)
+}
+
+get_scores <- function(csn) {
+  return(lapply(csn, ds_loop))
+}
+```
+
+```{r echo=FALSE, results = 'asis'}
+scores <- get_scores(csn_subset)
+c(scores[[1]]$Eff,scores[[2]]$Eff,scores[[3]]$Eff) %>% hist(20,main="Efficiency")
+c(scores[[1]]$LCC,scores[[2]]$LCC,scores[[3]]$LCC) %>% hist(20,main="LCC Size")
+kable(scores[[1]][c("Cell","Score")], align="l", caption="Lung Dataset")
+kable(scores[[2]][c("Cell","Score")], align="l", caption="Alveoli/Parenchyma Dataset")
+kable(scores[[3]][c("Cell","Score")], align="l", caption="Bronchi Dataset")
+```
+
+Results:
+
+The impact scores for the lung dataset indicate that ciliated cells are most disrupted by viral infection. This is in agreement with the alveoli dataset but not not bronchi dataset, where luminal macrophages are the highest scoring. There is a general trend of non-tissue-specific immune cells, including fibroblasts, monocytes, and dendritic cells, having the highest ranking scores in a given tissue. 
+
+AT1 and AT2 cell are of interest, being known for their high ACE2 expression and subsequent vulnerability to infection by SARS-CoV-2. Despite this, their impact scores were among the lowest in their respective tissues. Even in the highest ranking scenario for AT2 within the lung dataset, it has the 6th highest score out of 9.
+
